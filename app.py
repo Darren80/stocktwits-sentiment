@@ -24,7 +24,9 @@ def load_tweets_by_timeframe(file_path, start_time, end_time):
                 timeframe_tweets.append(tweet)
     return timeframe_tweets
 
-def display_sentiments_emotions(tweets, emoji_dict, category, current_counts, previous_counts):
+# print("change: ", change)
+
+def display_sentiments_emotions(tweets, emoji_dict, category, current_counts, changes):
     st.markdown(f"### {category.capitalize()}")
 
     # Prepare items for a 2-column grid
@@ -38,14 +40,13 @@ def display_sentiments_emotions(tweets, emoji_dict, category, current_counts, pr
             if index < len(items):
                 key, emoji = items[index]
                 current_count = current_counts.get(key, 0)
-                previous_count = previous_counts.get(key, 0)
-                change = current_count - previous_count
+                change = changes.get(key, 0)
+                print("change: ", change)
+                print(current_counts)
                 
-                # Calculate percentage change and determine arrow direction and color
-                if previous_count > 0:
-                    percent_change = (change / previous_count) * 100
-                else:
-                    percent_change = float('inf')  # Infinite if previous_count is 0
+                # Handling percentage change correctly
+                previous_count = current_count - change  # Back-calculate previous count
+                percent_change = (change / previous_count * 100) if previous_count != 0 else float('inf')
                 
                 arrow = "↗️" if change > 0 else "↘️" if change < 0 else "➖"
                 color = "color:green;" if change > 0 else "color:red;" if change < 0 else "color:black;"
@@ -62,31 +63,6 @@ def display_sentiments_emotions(tweets, emoji_dict, category, current_counts, pr
                     else:
                         st.write("No tweets found.")
 
-
-# def display_with_changes(emoji_dict, current_counts, changes, category):
-#     base_size = 20  # Base font size for emojis
-#     scaling_factor = 5  # Scaling factor for emoji size based on count
-    
-#     st.markdown(f"### {category}")
-    
-#     total_items = len(emoji_dict)
-#     num_rows = (total_items + 1) // 2  # Calculate required rows for a 2-column layout
-    
-#     for i in range(num_rows):
-#         cols = st.columns(2)
-#         for j in range(2):
-#             index = i * 2 + j
-#             if index < total_items:
-#                 key = list(emoji_dict.keys())[index]
-#                 emoji = emoji_dict[key]
-#                 current_count = current_counts.get(key, 0)
-#                 change = changes.get(key, 0)
-#                 arrow = "↗️" if change > 0 else "↘️" if change < 0 else ""
-                
-#                 size = base_size + (current_count * scaling_factor)
-#                 display_text = f"<span style='font-size: {size}px;'>{emoji} {current_count} {arrow}</span>"
-                
-#                 cols[j].markdown(display_text, unsafe_allow_html=True)
 
 
 # Mapping of emotions/sentiments to emojis: Update as per your categories
@@ -112,27 +88,31 @@ sentiment_emojis = {
 
 def time_period():
     # Calculate the current time and subtract 6 hours to define the start of the range
-    current_time = datetime.utcnow()
+    current_time = datetime.now(pytz.utc)  # Using now() with timezone awareness
     range_start = current_time - timedelta(hours=6)
 
     # Define the number of 30-minute intervals in a 6-hour range
     total_intervals = 12  # 6 hours * 2 intervals per hour
 
-    # User selects an interval using the slider
-    selected_interval_index = st.sidebar.slider("Select Time Interval (0 is most recent)", 0, total_intervals - 1, 0)
+    # Generate labels for each interval
+    interval_labels = [f"{30 * i} - {30 * (i + 1)} minutes in the past" for i in range(total_intervals)]
+    interval_labels.reverse()  # Reverse so that the most recent interval is first
 
-    # Calculate the start and end of the selected interval
-    # Note: This makes the 0th interval the most recent 30-minute window
+    # User selects an interval using the slider
+    selected_interval_label = st.sidebar.select_slider("Select Time Interval", options=interval_labels, value=interval_labels[0])
+
+    # Determine the selected interval index based on the chosen label
+    selected_interval_index = interval_labels.index(selected_interval_label)
+
+    # Calculate the start and end times for the selected interval
     interval_end = current_time - timedelta(minutes=30) * selected_interval_index
     interval_start = interval_end - timedelta(minutes=30)
 
-    # Display the selected interval
-    st.write(f"Viewing interval from {interval_start} to {interval_end}")
+    # Display the selected interval without seconds and timezone
+    st.write(f"Viewing interval from {interval_start.strftime('%Y-%m-%d %H:%M')} to {interval_end.strftime('%Y-%m-%d %H:%M')} {current_time.tzname()}")
 
-    # Placeholder for displaying data
-    # You would filter your dataset based on interval_start and interval_end here
-    # and display the relevant tweets or data.
     st.write("Display tweets or data for the selected interval here.")
+    
 # Sidebar for time period selection
 time_period()
 
