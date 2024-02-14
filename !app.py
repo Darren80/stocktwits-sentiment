@@ -269,7 +269,7 @@ if not current_interval_tweets.empty and not previous_interval_tweets.empty:
 
 
 # Load and sort news
-filename = f"{ticker}_stock.jsonl"
+filename = f"{ticker}_news.jsonl"
 sorted_news = load_and_sort_news(filename)
 st.sidebar.title(f"Recent News About {ticker}")
 
