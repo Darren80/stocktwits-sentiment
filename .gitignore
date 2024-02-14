@@ -1,7 +1,3 @@
-
-__pycache__/
-
-env/
-model/
-*.whl
-*.pyc
+extensions
+.git
+__pycache__
