@@ -228,7 +228,7 @@ print(current_interval_start)
 print(previous_interval_start)
 
 # Main app logic
-file_path = f'{ticker}_tweets.jsonl'
+file_path = f'{ticker}_tweets_final.jsonl'
 
 # Load tweets for each interval
 current_interval_tweets = pd.DataFrame(load_tweets_by_timeframe(file_path, current_interval_start, current_interval_end))
