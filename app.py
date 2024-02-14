@@ -199,49 +199,46 @@ def time_period():
     total_intervals = 12  # 6 hours * 2 intervals per hour
 
     # Generate labels for each interval
-    interval_labels = [f"{30 * i} - {30 * (i + 1)} minutes ago" for i in range(total_intervals)]
-    
-    # Reverse the list to make the slider start from right to left (most recent on the right)
-    interval_labels = list(reversed(interval_labels))
+    interval_labels = [f"{30 * i} - {30 * (i + 1)} minutes in the past" for i in range(total_intervals)]
+    interval_labels.reverse()  # Reverse so that the most recent interval is first
 
     # User selects an interval using the slider
-    selected_interval_label = st.sidebar.select_slider("Select Time Interval", options=interval_labels, value=interval_labels[0])
+    selected_interval_label = st.sidebar.select_slider("Select Time Interval", options=interval_labels, value=interval_labels[-1])
 
     # Determine the selected interval index based on the chosen label
     selected_interval_index = interval_labels.index(selected_interval_label)
 
     # Calculate the start and end times for the selected interval
-    interval_end = current_time - timedelta(minutes=30 * selected_interval_index)
-    interval_start = interval_end - timedelta(minutes=30)
+    interval_start = current_time - timedelta(minutes=30 * (total_intervals - selected_interval_index))
+    interval_end = interval_start + timedelta(minutes=30)
 
-    # Display the selected interval without seconds and timezone information
-    st.write(f"Viewing interval from {interval_start.strftime('%Y-%m-%d %H:%M')} to {interval_end.strftime('%Y-%m-%d %H:%M')} {current_time.tzname()}")
+    # Display the selected interval without seconds and timezone
+    st.write(f"Viewing interval from {interval_start.strftime('%Y-%m-%d %H:%M')} to {interval_end.strftime('%Y-%m-%d %H:%M')} UTC")
 
+    # Placeholder for displaying tweets or data for the selected interval
     st.write("Display tweets or data for the selected interval here.")
-    
-    return 
+
+    return [interval_start, interval_end]
     
 # Sidebar for time period selection
-interval_start, interval_end = time_period()
-
-
+current_interval_start, current_interval_end = time_period()
+previous_interval_end = current_interval_start
+previous_interval_start = previous_interval_end - timedelta(minutes=30)
+print(current_interval_start)
+print(previous_interval_start)
 
 # Main app logic
 file_path = f'{ticker}_tweets.jsonl'
-utc_now = datetime.utcnow().replace(tzinfo=pytz.utc)
-
-current_interval_end = utc_now
-current_interval_start = utc_now - timedelta(minutes=30)
-previous_interval_start = utc_now - timedelta(minutes=60)
-previous_interval_end = utc_now - timedelta(minutes=30)
 
 # Load tweets for each interval
 current_interval_tweets = pd.DataFrame(load_tweets_by_timeframe(file_path, current_interval_start, current_interval_end))
 previous_interval_tweets = pd.DataFrame(load_tweets_by_timeframe(file_path, previous_interval_start, previous_interval_end))
 
 # Debug
+print("C interval")
 print(current_interval_tweets.head())
 print(current_interval_tweets.columns)
+print("P interval")
 print(previous_interval_tweets.head())
 print(previous_interval_tweets.columns)
 
@@ -274,7 +271,7 @@ if not current_interval_tweets.empty and not previous_interval_tweets.empty:
 # Load and sort news
 filename = f"{ticker}_stock.jsonl"
 sorted_news = load_and_sort_news(filename)
-st.sidebar.title("Recent News About ...")
+st.sidebar.title(f"Recent News About {ticker}")
 
 for news_item in sorted_news:
     content = news_item.get('content', False)
