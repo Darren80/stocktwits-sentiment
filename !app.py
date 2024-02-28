@@ -67,6 +67,7 @@ for sentence in key_sentences:
 
 
 import streamlit as st
+st.set_page_config(layout="wide")
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 import json
@@ -108,16 +109,29 @@ def display_tweets(tweets, selected_category, category_name):
     else:
         st.write("No tweets found for this category.")
     
+def parse_date(date_str):
+    # Handles both 'date' and 'created_at' formats with timezone awareness
+    if date_str.endswith('Z'):
+        # If the string ends with 'Z', it's UTC. Replace 'Z' with '+00:00' for consistency
+        date_str = date_str.rstrip('Z') + '+00:00'
+    # Parse the datetime string into a timezone-aware datetime object
+    return datetime.fromisoformat(date_str).astimezone(pytz.utc)
+    
 # Function to load recent tweets
-def load_tweets_by_timeframe(file_path, start_time, end_time):
+def load_tweets_by_timeframe(file_paths, start_time, end_time):
     timeframe_tweets = []
-    with open(file_path, 'r', encoding='utf-8') as file:
-        for line in file:
-            tweet = json.loads(line)
-            tweet_time = datetime.fromisoformat(tweet['date'].rstrip('Z'))  # Convert to datetime, removing 'Z'
-            if start_time <= tweet_time <= end_time:
-                timeframe_tweets.append(tweet)
+    for file_path in file_paths:  # Iterate over both file paths
+        with open(file_path, 'r', encoding='utf-8') as file:
+            for line in file:
+                tweet = json.loads(line)
+                # Check for 'date' or 'created_at', assuming 'date' takes precedence
+                tweet_time_str = tweet.get('date') or tweet.get('created_at')
+                if tweet_time_str:
+                    tweet_time = parse_date(tweet_time_str)
+                    if start_time <= tweet_time <= end_time:
+                        timeframe_tweets.append(tweet)
     return timeframe_tweets
+
 
 # Function to load and sort news from a .jsonl file
 def load_and_sort_news(filename):
@@ -132,7 +146,19 @@ def load_and_sort_news(filename):
 
 
 def display_sentiments_emotions(tweets, emoji_dict, category, current_counts, changes):
-    st.markdown(f"### {category.capitalize()}")
+    
+    st.markdown(f"### {category.capitalize()} Overview")
+
+    # Display an overview of sentiments/emotions
+    overview_html = ""
+    for sentiment, emoji in emoji_dict.items():
+        count = current_counts.get(sentiment, 0)
+        change = changes.get(sentiment, 0)
+        arrow = "↗️" if change > 0 else "↘️" if change < 0 else "➖"
+        color = "color:green;" if change > 0 else "color:red;" if change < 0 else ""
+        overview_html += f"{emoji} {sentiment.capitalize()}: <span style='{color}'>{count} {arrow}</span><br>"
+
+    st.markdown(overview_html, unsafe_allow_html=True)
 
     # Prepare items for a 2-column grid
     items = list(emoji_dict.items())
@@ -146,8 +172,6 @@ def display_sentiments_emotions(tweets, emoji_dict, category, current_counts, ch
                 key, emoji = items[index]
                 current_count = current_counts.get(key, 0)
                 change = changes.get(key, 0)
-                print("change: ", change)
-                print(current_counts)
                 
                 # Handling percentage change correctly
                 previous_count = current_count - change  # Back-calculate previous count
@@ -164,11 +188,45 @@ def display_sentiments_emotions(tweets, emoji_dict, category, current_counts, ch
                 with cols[j].expander(f"Show tweets for {key.capitalize()}"):
                     filtered_tweets = tweets[tweets[category] == key]
                     if not filtered_tweets.empty:
-                        st.dataframe(filtered_tweets[['date', 'cleanContent']])
+                        for _, tweet in filtered_tweets.iterrows():
+                            # Constructing a tweet display format
+                            tweet_display = f"""
+                            <div style="border: 1px solid #e1e4e8; border-radius: 10px; padding: 10px; margin-bottom: 10px;">
+                                <p style="color: #bbb; margin-bottom: 2px;">{tweet['date']}</p>
+                                <p style="font-size: 16px; margin-bottom: 2px;">{tweet.get('rawConent', tweet['cleanContent'])}</p>
+                                <a href="{tweet['url']}" target="_blank">View Tweet</a>
+                            </div>
+                            """
+                            cols[j].markdown(tweet_display, unsafe_allow_html=True)
                     else:
                         st.write("No tweets found.")
 
+def read_and_count_sentiments(file_paths, lookback_hours=24):
+    sentiments_count = {'bullish': 0, 'bearish': 0}
+    lookback_limit = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+    
+    for file_path in file_paths:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            for line in file:
+                try:
+                    tweet = json.loads(line)
+                    created_at = datetime.strptime(tweet.get('created_at'), '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+                    if created_at >= lookback_limit:
+                        sentiment = tweet.get('entities', {}).get('sentiment', {}).get('basic', '').lower()
+                        if sentiment in sentiments_count:
+                            sentiments_count[sentiment] += 1
+                except json.JSONDecodeError:
+                    pass  # Ignore lines that can't be decoded
+                except Exception as e:
+                    print(f"Error processing tweet: {e}")
+    return sentiments_count
 
+def display_sentiments(sentiments_count):
+    st.title("Sentiment Analysis - Past 24 hours")
+    st.write("### Bullish Sentiments")
+    st.write(sentiments_count['bullish'])
+    st.write("### Bearish Sentiments")
+    st.write(sentiments_count['bearish'])
 
 # Mapping of emotions/sentiments to emojis: Update as per your categories
 emotion_emojis = {
@@ -182,16 +240,16 @@ emotion_emojis = {
 }
 
 sentiment_emojis = {
-    'strong negative': '😡',  # Very angry or upset
-    'moderately negative': '😠',  # Angry
-    'mildly negative': '🙁',  # Slightly frowning
-    'neutral': '😐',  # Neutral face
-    'mildly positive': '🙂',  # Slightly smiling
+    'strong positive': '😁',  # Beaming face with smiling eyes
     'moderately positive': '😊',  # Smiling
-    'strong positive': '😁'  # Beaming face with smiling eyes
+    'mildly positive': '🙂',  # Slightly smiling
+    'neutral': '😐',  # Neutral face
+    'mildly negative': '🙁',  # Slightly frowning
+    'moderately negative': '😠',  # Angry
+    'strong negative': '😡',  # Very angry or upset
 }
 
-def time_period():
+def time_period(time_window=60):
     # Calculate the current time and subtract 6 hours to define the start of the range
     current_time = datetime.now(pytz.utc)  # Using now() with timezone awareness
     
@@ -199,7 +257,7 @@ def time_period():
     total_intervals = 12  # 6 hours * 2 intervals per hour
 
     # Generate labels for each interval
-    interval_labels = [f"{30 * i} - {30 * (i + 1)} minutes in the past" for i in range(total_intervals)]
+    interval_labels = [f"{time_window * i} - {time_window * (i + 1)} minutes in the past" for i in range(total_intervals)]
     interval_labels.reverse()  # Reverse so that the most recent interval is first
 
     # User selects an interval using the slider
@@ -209,8 +267,8 @@ def time_period():
     selected_interval_index = interval_labels.index(selected_interval_label)
 
     # Calculate the start and end times for the selected interval
-    interval_start = current_time - timedelta(minutes=30 * (total_intervals - selected_interval_index))
-    interval_end = interval_start + timedelta(minutes=30)
+    interval_start = current_time - timedelta(minutes=time_window * (total_intervals - selected_interval_index))
+    interval_end = interval_start + timedelta(minutes=time_window)
 
     # Display the selected interval without seconds and timezone
     st.write(f"Viewing interval from {interval_start.strftime('%Y-%m-%d %H:%M')} to {interval_end.strftime('%Y-%m-%d %H:%M')} UTC")
@@ -228,11 +286,19 @@ print(current_interval_start)
 print(previous_interval_start)
 
 # Main app logic
-file_path = f'{ticker}_tweets_final.jsonl'
+file_paths = [f'backup/final_{ticker}_tweets.jsonl', f'backup/final_{ticker}_stocktweets.jsonl']
 
 # Load tweets for each interval
-current_interval_tweets = pd.DataFrame(load_tweets_by_timeframe(file_path, current_interval_start, current_interval_end))
-previous_interval_tweets = pd.DataFrame(load_tweets_by_timeframe(file_path, previous_interval_start, previous_interval_end))
+current_interval_tweets = pd.DataFrame(load_tweets_by_timeframe(file_paths, current_interval_start, current_interval_end))
+previous_interval_tweets = pd.DataFrame(load_tweets_by_timeframe(file_paths, previous_interval_start, previous_interval_end))
+
+st.header('Summary')
+st.write(f'Number of Tweets in Current Interval: {len(current_interval_tweets)}')
+st.write(f'Number of Tweets in Previous Interval: {len(previous_interval_tweets)}')
+
+# Raw Data
+sentiments_count = read_and_count_sentiments(['backup/trash_TSLA_stocktweets.jsonl', 'backup/TSLA_stocktweets.jsonl'])
+display_sentiments(sentiments_count)
 
 # Debug
 print("C interval")
@@ -255,21 +321,25 @@ def calculate_changes(current_counts, previous_counts):
         changes[key] = current - previous
     return changes
 
-if not current_interval_tweets.empty and not previous_interval_tweets.empty:
+if not current_interval_tweets.empty: # and not previous_interval_tweets.empty:
     current_sentiment_counts, current_emotion_counts = calculate_counts(current_interval_tweets)
-    previous_sentiment_counts, previous_emotion_counts = calculate_counts(previous_interval_tweets)
+    print(current_emotion_counts)
+    print(current_sentiment_counts)
+    if previous_interval_tweets.empty:
+        previous_sentiment_counts = None 
+        previous_emotion_counts = None
+    else:
+        previous_sentiment_counts, previous_emotion_counts = calculate_counts(previous_interval_tweets)
 
     sentiment_changes = calculate_changes(current_sentiment_counts, previous_sentiment_counts)
     emotion_changes = calculate_changes(current_emotion_counts, previous_emotion_counts)
 
-    # Assuming you have DataFrames or Series for current counts and changes
-    # For example: current_sentiment_counts, sentiment_changes, current_emotion_counts, emotion_changes
     display_sentiments_emotions(current_interval_tweets, sentiment_emojis, 'sentiment', current_sentiment_counts, sentiment_changes)
     display_sentiments_emotions(current_interval_tweets, emotion_emojis, 'emotion', current_emotion_counts, emotion_changes)
 
 
 # Load and sort news
-filename = f"{ticker}_news.jsonl"
+filename = f"./news/{ticker}_news.jsonl"
 sorted_news = load_and_sort_news(filename)
 st.sidebar.title(f"Recent News About {ticker}")
 
@@ -284,6 +354,16 @@ for news_item in sorted_news:
     if not content:
         title_display += '&#10060;'  # Unicode for X mark
         content = "Content not availible."
+        
+    # Inject custom CSS to reduce padding
+    st.sidebar.markdown("""
+    <style>
+        .css-1d391kg {padding-top: 0rem; padding-bottom: 0rem;}
+        .css-1outpf7 {padding-top: 0rem; padding-bottom: 0rem;}
+        .st-cm {margin-bottom: 0rem;}
+        .css-18e3th9 {padding-bottom: 0rem !important;}
+    </style>
+    """, unsafe_allow_html=True)
     
     # Displaying each news item in the sidebar
     with st.sidebar.expander(f"{title_display} ({news_item['published date']}) ({news_item['publisher']['href']})", expanded=False):
